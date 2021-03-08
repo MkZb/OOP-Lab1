@@ -1,6 +1,5 @@
 #pragma once
 #include <list>
-#include <vector>
 using word_t = intptr_t;
 
 struct Block {
@@ -16,6 +15,7 @@ struct Arena {
 	Block* heapStart;
 	Block* top;
 	Arena* next;
+	unsigned int usedBlocks;
 };
 
 enum class MemoryType {
@@ -32,11 +32,10 @@ public:
 	void mem_free(void* ptr);
 	void* mem_realloc(void* ptr, size_t size);
 	void mem_show();
-	//temorary helper functions move to private later
-	Block* getHeader(word_t* data);
 private:
 	static const int DEFAULT_ARENA_SIZE = 4096;
-	static const int MAXIMUM_ARENAS = 100; //20 bytes per arena header
+	static const int MAXIMUM_ARENAS = 1000;
+	static const size_t BLOCK_HEADER_SIZE = sizeof(word_t) + sizeof(bool) + sizeof(size_t);
 	word_t pageSize;
 	MemoryType memoryType;
 	word_t createArena(size_t size);
@@ -44,13 +43,13 @@ private:
 	Block* bestFit(size_t size);
 	Block* findBlock(size_t size);
 	Block* listAllocate(Block* block, size_t size);
+	Block* getHeader(word_t* data);
+	bool canSplit(Block* block, size_t size);
 	Block* split(Block* block, size_t size);
 	Block* merge(Block* block);
-	Arena* findArena(Block* targetBlock);
-	void freeArena(Arena* arena);
+	size_t findArena(Block* targetBlock);
+	void freeArena(size_t idx);
 	word_t* allocateOnArena(size_t size);
-	//Arena* startingArena;
-	//Arena* topArena;
 	int currentArena;
 	int lastArena;
 	Arena arenasList[MAXIMUM_ARENAS];

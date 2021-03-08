@@ -2,9 +2,8 @@
 #include "Allocator.h"
 #include <heapapi.h>
 #include <iostream>
+#include <fstream>
 #include <stdio.h>
-
-#include <sysinfoapi.h>
 
 enum class SearchMode {
 	FirstFit,
@@ -24,10 +23,6 @@ inline HANDLE requestHeapOS() {
 	return growableHeap;
 }
 
-//Check wether block can be split
-inline bool canSplit(Block* block, size_t size) {
-	return block->size - size >= 4 * sizeof(word_t);
-}
 
 //Check wether block can be merged with next one
 bool canMerge(Block* block) {
@@ -40,16 +35,12 @@ HANDLE workingHeap = requestHeapOS();
 
 Allocator::Allocator(word_t pgSz)
 {
-	std::cout << "Welcome to allocation of hell!\n";
-	//SYSTEM_INFO info;
-	//GetSystemInfo(&info);
-	//std::cout << info.dwPageSize;
-	//int basePageSize = 4096;
+	std::cout << "Welcome to my allocator!\n";
 
 	//Initializing values;
 	arenasList[0] = {};
 	currentArena = 0;
-	lastArena = currentArena; //debugging
+	lastArena = currentArena;
 	pageSize = pgSz;
 	switch (pageSize)
 	{
@@ -95,9 +86,10 @@ void* Allocator::mem_alloc(size_t size)
 		arenasList[0].heapStart = nullptr;
 		arenasList[0].top = nullptr;
 		arenasList[0].next = nullptr;
+		arenasList[0].usedBlocks = 0;
 	}
 	size = align(size);
-	if (size <= arenasList[currentArena].size) {
+	if (size <= DEFAULT_ARENA_SIZE) {
 		currentArena = 0;
 		word_t* ptr = allocateOnArena(size);
 		if (ptr == nullptr) {
@@ -117,7 +109,8 @@ void* Allocator::mem_alloc(size_t size)
 				(Block*)createArena(arenaSize),
 				nullptr,
 				nullptr,
-				nullptr
+				nullptr,
+				0
 			};
 			arenasList[currentArena].next = &newArena;
 			currentArena += 1;
@@ -134,10 +127,10 @@ void* Allocator::mem_alloc(size_t size)
 		switch (memoryType)
 		{
 		case(MemoryType::Paged):
-			arenaSize = ceil((float)(sizeof(word_t) * 3 + size) / pageSize) * pageSize;
+			arenaSize = ceil((float)(align(BLOCK_HEADER_SIZE) + size) / pageSize) * pageSize;
 			break;
 		default:
-			arenaSize = size + sizeof(word_t) * 3;
+			arenaSize = size + align(BLOCK_HEADER_SIZE);
 			break;
 		}
 
@@ -146,11 +139,12 @@ void* Allocator::mem_alloc(size_t size)
 				(Block*)createArena(arenaSize),
 				nullptr,
 				nullptr,
-				nullptr
+				nullptr,
+				0
 		};
 		arenasList[currentArena].next = &newArena;
-		currentArena = lastArena + 1;
-		if (lastArena < currentArena)lastArena = currentArena;
+		lastArena += 1;
+		currentArena = lastArena;
 		arenasList[currentArena] = newArena;
 		return allocateOnArena(size);
 	}
@@ -160,21 +154,17 @@ void Allocator::mem_free(void* ptr)
 {
 	if (ptr != nullptr) {
 		Block* block = getHeader((word_t*)ptr);
+		size_t arenaIdx = findArena(block);
+		currentArena = arenaIdx;
 		while (canMerge(block)) {
 			block = merge(block);
 		}
 		block->used = FALSE;
-		/*
-		Arena* arena = findArena(block);
-		block = arena->heapStart;
-		while (block->next != nullptr) {
-			if (block->used == TRUE) {
-				return;
-			}
-			block = block->next;
+
+		arenasList[arenaIdx].usedBlocks -= 1;
+		if (arenasList[arenaIdx].usedBlocks == 0) {
+			freeArena(arenaIdx);
 		}
-		freeArena(arena);
-		*/
 	}
 }
 
@@ -183,13 +173,30 @@ void* Allocator::mem_realloc(void* ptr, size_t size)
 	size = align(size);
 	Block* block = getHeader((word_t*)ptr);
 	block->used = FALSE;
-	byte* newDataPtr = (byte *)mem_alloc(size);
-	byte* oldDataPtr = (byte*)ptr;
-	word_t min = size < block->size ? size : block->size;
-	for (int i = 0; i < min; i++) {
-		*(newDataPtr + i)= *(oldDataPtr + i);
+	char* newDataPtr = (char*)mem_alloc(size);
+	char* oldDataPtr = (char*)ptr;
+
+	//If reallocating on same arena we should subtratct 1 from 
+	//Used blocks in arena (because allocateOnArena() adds 1
+	//every time we allocate a new block
+	int oldArenaIdx = findArena(getHeader((word_t*)oldDataPtr));
+	int newArenaIdx = findArena(getHeader((word_t*)newDataPtr));
+	if (oldArenaIdx == newArenaIdx) {
+		arenasList[newArenaIdx].usedBlocks -= 1;
+	} else {
+		arenasList[oldArenaIdx].usedBlocks -= 1;
+	}
+	
+	//Moving data if its different block
+	if (newDataPtr != oldDataPtr) {
+		word_t min = size < block->size ? size : block->size;
+		for (int i = 0; i < min; i++) {
+			*(newDataPtr + i)= *(oldDataPtr + i);
+		}
 	}
 
+	currentArena = oldArenaIdx;
+	//Trying to merge leftovers from old block or new leftovers in case of same block allocation
 	if (oldDataPtr != newDataPtr) {
 		while (canMerge(block)) {
 			block = merge(block);
@@ -197,25 +204,32 @@ void* Allocator::mem_realloc(void* ptr, size_t size)
 		block->used = FALSE;
 	} else {
 		Block* block = getHeader((word_t*)newDataPtr)->next;
-		while (canMerge(block)) {
-			block = merge(block);
+		if (block != nullptr && !block->used) {
+			while (canMerge(block)) {
+				block = merge(block);
+			}
+			block->used = FALSE;
 		}
-		block->used = FALSE;
 	}
 	return (void*)newDataPtr;
 }
 
 void Allocator::mem_show()
 {
+	if (!lastArena && !arenasList[lastArena].size) {
+		std::cout << "\nMemory currently free" << "\n";
+		return;
+	}
 	for (int j = 0; j <= lastArena; j++)
 	{
 		Arena arena = arenasList[j];
 		Block* block = arena.heapStart;
 		int i = 1;
 		std::cout << "\n         Arena " << j+1 << ": size - " << arenasList[j].size << " bytes\n";
+		
 		while (block != nullptr)
-		{
-			std::cout << "Block " << i << " adress: " << block << "; usage: " << block->used << "; size: " << block->size << "\n";
+		{	
+			std::cout << "Block " << i << " data adress: " << block->data << "; usage: " << block->used << "; size: " << block->size << "\n";
 			i++;
 			block = block->next;
 		}
@@ -294,7 +308,6 @@ Block* Allocator::findBlock(size_t size)
 
 Block* Allocator::listAllocate(Block* block, size_t size)
 {
-	// Split the larger block, reusing the free part.
 	if (canSplit(block, size)) {
 		block = split(block, size);
 	}
@@ -302,17 +315,22 @@ Block* Allocator::listAllocate(Block* block, size_t size)
 	return block;
 }
 
+bool Allocator::canSplit(Block* block, size_t size)
+{
+	return block->size - size >= align(BLOCK_HEADER_SIZE + sizeof(word_t));
+}
+
 Block* Allocator::split(Block* block, size_t size)
 {
 	size_t oldSize = block->size;
 	char* blockStart = (char*)block;
-	Block* newBlock = (Block*)(blockStart + 3 * sizeof(word_t) + size);
+	Block* newBlock = (Block*)(blockStart + align(BLOCK_HEADER_SIZE) + size);
 	if (arenasList[currentArena].top == block) {
 		arenasList[currentArena].top = newBlock;
 	}
 	block->size = size;
 	block->used = TRUE;
-	newBlock->size = oldSize - size - 3 * sizeof(word_t);
+	newBlock->size = oldSize - size - align(BLOCK_HEADER_SIZE);
 	newBlock->used = FALSE;
 	newBlock->next = block->next;
 	block->next = newBlock;
@@ -322,52 +340,64 @@ Block* Allocator::split(Block* block, size_t size)
 
 Block* Allocator::merge(Block* block)
 {
-	block->size = block->size + block->next->size + 3 * sizeof(word_t);
+	if (arenasList[currentArena].top == block->next) {
+		arenasList[currentArena].top = block;
+	}
+	block->size = block->size + block->next->size + align(BLOCK_HEADER_SIZE);
 	block->next = block->next->next;
 	return block;
 }
 
-//FIX
-Arena* Allocator::findArena(Block* targetBlock)
+
+size_t Allocator::findArena(Block* targetBlock)
 {
-	Arena arena = arenasList[0];
-	while (arena.arenaStart != nullptr) {
+	for (size_t i = 0; i <= (size_t)lastArena; i++) {
+		Arena arena = arenasList[i];
 		Block* block = arena.heapStart;
 		while (block != nullptr) {
 			if (block == targetBlock) {
-				return &arena;
+				return i;
 			}
 			block = block->next;
 		}
-		arena = *arena.next;
 	}
-	return nullptr;
+
+	return NULL; //Should be impossible
 }
-//FIX
-void Allocator::freeArena(Arena* arena)
+
+void Allocator::freeArena(size_t idx)
 {
-	//MAYBE FIX?
-	for (size_t i = 0; i < sizeof(arenasList); i++)	{
-		if (&arenasList[i] == arena) {
-			if ((i != 0) && (i != sizeof(arenasList))) {
-				arenasList[i-1].next = &arenasList[i+1];
+	HeapFree(workingHeap, NULL, arenasList[idx].heapStart);
+
+	if (idx != lastArena) {
+		for (size_t i = idx; i < lastArena; i++) {
+			arenasList[i] = arenasList[i + 1];
+			if (idx != 0) {
+				arenasList[i - 1].next = &arenasList[i];
 			}
-			for (size_t j = i; j < sizeof(arenasList)-1; j++)
-			{
-				arenasList[j] = arenasList[j + 1];
-			}
+			arenasList[i].next = &arenasList[i + 1];
+		}
+		arenasList[lastArena - 1].next = nullptr;
+	} else {
+		if (idx != 0) {
+			arenasList[idx - 1].next = nullptr;
 		}
 	}
-	HeapFree(workingHeap, NULL, arena);
+
+	arenasList[lastArena] = {};
+	if (lastArena != 0) {
+		lastArena -= 1;
+	}
 }
 
 word_t* Allocator::allocateOnArena(size_t size)
 {
 	//Iterate over all arenas
-	do {
+	for (currentArena = 0; currentArena <= lastArena; currentArena++) {
 		//If we dont find block that can fit data of requested size
 		//We are trying to create new block of given size on current arena
 		if (Block* block = findBlock(size)) {
+			arenasList[findArena(block)].usedBlocks += 1;
 			block->used = TRUE;
 			return block->data;
 		}
@@ -375,7 +405,7 @@ word_t* Allocator::allocateOnArena(size_t size)
 		Block* block = nullptr;
 		if (arenasList[currentArena].heapStart == nullptr) {
 			block = (Block*)arenasList[currentArena].arenaStart;
-			currentArenaNewSize = sizeof(word_t)*3 + size;
+			currentArenaNewSize = align(BLOCK_HEADER_SIZE + size);
 		}
 		else {
 			block = arenasList[currentArena].heapStart;
@@ -383,20 +413,17 @@ word_t* Allocator::allocateOnArena(size_t size)
 				block = block->next;
 			}
 
-			block = (Block*)((char*)block + sizeof(word_t) * 3 + block->size);
-			currentArenaNewSize = (size_t)block + sizeof(word_t) * 3 + size - (size_t)arenasList[currentArena].arenaStart;
+			block = (Block*)((char*)block + align(BLOCK_HEADER_SIZE) + block->size);
+			currentArenaNewSize = (size_t)block + align(BLOCK_HEADER_SIZE) + size - (size_t)arenasList[currentArena].arenaStart;
 
 		}
 		if (currentArenaNewSize > arenasList[currentArena].size) {
-			if (arenasList[currentArena].next != nullptr) {
-				currentArena += 1; //proceed to next arena
-				if (lastArena < currentArena)lastArena = currentArena; //debugging
-			}
 			continue;
 		}
 
 		block->size = size;
 		block->used = TRUE;
+		block->next = nullptr;
 
 		if (arenasList[currentArena].heapStart == nullptr) {
 			arenasList[currentArena].heapStart = block;
@@ -407,9 +434,10 @@ word_t* Allocator::allocateOnArena(size_t size)
 		}
 
 		arenasList[currentArena].top = block;
+		arenasList[currentArena].usedBlocks += 1;
 		return block->data;
-	} while (arenasList[currentArena].next != nullptr);
-	
+	}
+	currentArena -= 1;
 	return nullptr;
 }
 

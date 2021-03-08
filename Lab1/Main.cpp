@@ -1,6 +1,6 @@
 #include <iostream>
 #include "Allocator.h"
-
+#include "TestAllocator.h"
 using namespace std;
 
 void test_mem() {
@@ -34,7 +34,7 @@ void test_mem() {
 
 	*p9 = 1000;
 	*(p9 + 50) = 1000;
-	test.mem_realloc(p9, 500);
+	p9 = (int*)test.mem_realloc(p9, 500);
 	std::cout << "\n\n           Memory snap 5           " << "\n";
 	test.mem_show();
 
@@ -55,10 +55,20 @@ void test_mem() {
 	test.mem_realloc(p11, 100);
 	std::cout << "\n\n           Memory snap 9           " << "\n";
 	test.mem_show();
+
+	test.mem_free(p10);
+	test.mem_free(p11);
+	test.mem_free(p1);
+	test.mem_free(p8);
+	std::cout << "\n\n           Memory snap 10           " << "\n";
+	test.mem_show();
 }
 
 int main() {
 	
-	test_mem();
+	//test_mem();
+	Allocator allocator = Allocator::Allocator(0);
+	TestAllocator tester = TestAllocator::TestAllocator(&allocator);
+	tester.test(1024, 100000);
 	return 0;
 }
