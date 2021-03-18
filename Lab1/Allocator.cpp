@@ -35,7 +35,6 @@ Allocator::~Allocator()
 	printf("Allocator Destroyed ;(\n");
 }
 
-
 void* Allocator::mem_alloc(size_t size)
 {
 	//If exceeded maximum set arenas value or requested size is 0
@@ -64,14 +63,6 @@ void* Allocator::mem_alloc(size_t size)
 		arenasList[0].usedBlocks = 0;
 	}
 	size = align(size);
-	/*
-	size_t checkValue;
-	if (memoryType == MemoryType::Paged) {
-		checkValue = ceil((float)DEFAULT_ARENA_SIZE / pageSize) * pageSize;
-	}
-	else {
-		checkValue = DEFAULT_ARENA_SIZE;
-	}*/
 
 	//Try to allocate on existing memory
 	word_t* ptr = allocateOnArena(size, 0);
@@ -141,67 +132,6 @@ void* Allocator::mem_alloc(size_t size)
 	} else {
 		return ptr;
 	}
-	/*
-	if (size + align(BLOCK_HEADER_SIZE) <= checkValue) {
-		currentArena = 0;
-		word_t* ptr = allocateOnArena(size);
-		if (ptr == nullptr) {
-			//Need new arena
-			size_t arenaSize;
-			switch (memoryType)
-			{
-			case(MemoryType::Paged):
-				arenaSize = ceil((float)DEFAULT_ARENA_SIZE / pageSize) * pageSize;
-				break;
-			default:
-				arenaSize = DEFAULT_ARENA_SIZE;
-				break;
-			}
-			Arena newArena {
-				arenaSize,
-				(Block*)createArena(arenaSize),
-				nullptr,
-				nullptr,
-				nullptr,
-				0
-			};
-			arenasList[lastArena].next = &newArena;
-			lastArena += 1;
-			currentArena = lastArena;
-			arenasList[lastArena] = newArena;
-			return allocateOnArena(size);
-		}
-		else {
-			return ptr;
-		}
-	} else {
-		//Need new bigger arena
-		size_t arenaSize;
-		switch (memoryType)
-		{
-		case(MemoryType::Paged):
-			arenaSize = ceil((float)(align(BLOCK_HEADER_SIZE) + size) / pageSize) * pageSize;
-			break;
-		default:
-			arenaSize = size + align(BLOCK_HEADER_SIZE);
-			break;
-		}
-
-		Arena newArena {
-				arenaSize,
-				(Block*)createArena(arenaSize),
-				nullptr,
-				nullptr,
-				nullptr,
-				0
-		};
-
-		arenasList[lastArena].next = &newArena;
-		lastArena += 1;
-		currentArena = lastArena;
-		arenasList[lastArena] = newArena;
-		return allocateOnArena(size);
-	}*/
 }
 
 void Allocator::mem_free(void* ptr)
@@ -233,18 +163,6 @@ void* Allocator::mem_realloc(void* ptr, size_t size)
 
 	char* newDataPtr = (char*)mem_alloc(size);
 	int newArenaIdx = findArena(getHeader((word_t*)newDataPtr));
-
-	//If reallocating on same block we should subtratct 1 from 
-	//Used blocks in arena (because allocateOnArena() adds 1
-	//every time we allocate a new block
-	/*
-	if (oldArenaIdx == newArenaIdx) {
-		if (oldDataPtr == newDataPtr) {
-			arenasList[newArenaIdx].usedBlocks -= 1;
-		}
-	} else {
-		arenasList[oldArenaIdx].usedBlocks -= 1;
-	}*/
 	
 	//Moving data if its different block
 	if (newDataPtr != oldDataPtr) {
@@ -293,7 +211,6 @@ void Allocator::mem_show()
 		}
 	}
 }
-
 
 //Aligning size
 inline size_t Allocator::align(size_t n)
