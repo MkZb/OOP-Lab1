@@ -14,7 +14,7 @@ Allocator::Allocator(word_t pgSz)
 	//Initializing values;
 	arenasList[0] = {};
 	currentArena = 0;
-	lastArena = currentArena;
+	lastArena = 0;
 	pageSize = pgSz;
 	searchMode = SearchMode::BestFit;
 	switch (pageSize)
@@ -50,7 +50,7 @@ void* Allocator::mem_alloc(size_t size)
 		switch (memoryType)
 		{
 		case(MemoryType::Paged): 			
-			arenaSize = (DEFAULT_ARENA_SIZE/pageSize)*pageSize;
+			arenaSize = ceil((float)DEFAULT_ARENA_SIZE / pageSize) * pageSize;
 			break;
 		default:
 			arenaSize = DEFAULT_ARENA_SIZE;
@@ -64,7 +64,85 @@ void* Allocator::mem_alloc(size_t size)
 		arenasList[0].usedBlocks = 0;
 	}
 	size = align(size);
-	if (size + align(BLOCK_HEADER_SIZE) <= DEFAULT_ARENA_SIZE) {
+	/*
+	size_t checkValue;
+	if (memoryType == MemoryType::Paged) {
+		checkValue = ceil((float)DEFAULT_ARENA_SIZE / pageSize) * pageSize;
+	}
+	else {
+		checkValue = DEFAULT_ARENA_SIZE;
+	}*/
+
+	//Try to allocate on existing memory
+	word_t* ptr = allocateOnArena(size, 0);
+	if (ptr == nullptr) {
+		//Need new arena
+		size_t checkValue;
+		if (memoryType == MemoryType::Paged) {
+			checkValue = ceil((float)DEFAULT_ARENA_SIZE / pageSize) * pageSize;
+		}
+		else {
+			checkValue = DEFAULT_ARENA_SIZE;
+		}
+	
+		if (size + align(BLOCK_HEADER_SIZE) <= checkValue) {
+			//Create deafault arena
+			size_t arenaSize;
+			switch (memoryType)
+			{
+			case(MemoryType::Paged):
+				arenaSize = ceil((float)DEFAULT_ARENA_SIZE / pageSize) * pageSize;
+				break;
+			default:
+				arenaSize = DEFAULT_ARENA_SIZE;
+				break;
+			}
+			Arena newArena{
+				arenaSize,
+				(Block*)createArena(arenaSize),
+				nullptr,
+				nullptr,
+				nullptr,
+				0
+			};
+			arenasList[lastArena].next = &newArena;
+			lastArena += 1;
+			currentArena = lastArena;
+			arenasList[lastArena] = newArena;
+			return allocateOnArena(size, lastArena);
+		} else {
+			//Need new bigger arena
+			size_t arenaSize;
+			switch (memoryType)
+			{
+			case(MemoryType::Paged):
+				arenaSize = ceil((float)(align(BLOCK_HEADER_SIZE) + size) / pageSize) * pageSize;
+				break;
+			default:
+				arenaSize = size + align(BLOCK_HEADER_SIZE);
+				break;
+			}
+
+			Arena newArena{
+					arenaSize,
+					(Block*)createArena(arenaSize),
+					nullptr,
+					nullptr,
+					nullptr,
+					0
+			};
+
+			arenasList[lastArena].next = &newArena;
+			lastArena += 1;
+			currentArena = lastArena;
+			arenasList[lastArena] = newArena;
+			return allocateOnArena(size, lastArena);
+		}
+	} else {
+		return ptr;
+	}
+	/*
+	if (size + align(BLOCK_HEADER_SIZE) <= checkValue) {
 		currentArena = 0;
 		word_t* ptr = allocateOnArena(size);
 		if (ptr == nullptr) {
@@ -73,7 +151,7 @@ void* Allocator::mem_alloc(size_t size)
 			switch (memoryType)
 			{
 			case(MemoryType::Paged):
-				arenaSize = (DEFAULT_ARENA_SIZE / pageSize) * pageSize;
+				arenaSize = ceil((float)DEFAULT_ARENA_SIZE / pageSize) * pageSize;
 				break;
 			default:
 				arenaSize = DEFAULT_ARENA_SIZE;
@@ -87,10 +165,10 @@ void* Allocator::mem_alloc(size_t size)
 				nullptr,
 				0
 			};
-			arenasList[currentArena].next = &newArena;
-			currentArena += 1;
-			if (lastArena < currentArena)lastArena = currentArena; //debugging
-			arenasList[currentArena] = newArena;
+			arenasList[lastArena].next = &newArena;
+			lastArena += 1;
+			currentArena = lastArena;
+			arenasList[lastArena] = newArena;
 			return allocateOnArena(size);
 		}
 		else {
@@ -117,12 +195,13 @@ void* Allocator::mem_alloc(size_t size)
 				nullptr,
 				0
 		};
-		arenasList[currentArena].next = &newArena;
+
+		arenasList[lastArena].next = &newArena;
 		lastArena += 1;
 		currentArena = lastArena;
-		arenasList[currentArena] = newArena;
+		arenasList[lastArena] = newArena;
 		return allocateOnArena(size);
-	}
+	}*/
 }
 
 void Allocator::mem_free(void* ptr)
@@ -148,19 +227,24 @@ void* Allocator::mem_realloc(void* ptr, size_t size)
 	size = align(size);
 	Block* block = getHeader((word_t*)ptr);
 	block->used = FALSE;
-	char* newDataPtr = (char*)mem_alloc(size);
 	char* oldDataPtr = (char*)ptr;
+	int oldArenaIdx = findArena(getHeader((word_t*)oldDataPtr));
+	arenasList[oldArenaIdx].usedBlocks -= 1;
 
-	//If reallocating on same arena we should subtratct 1 from 
+	char* newDataPtr = (char*)mem_alloc(size);
+	int newArenaIdx = findArena(getHeader((word_t*)newDataPtr));
+
+	//If reallocating on same block we should subtratct 1 from 
 	//Used blocks in arena (because allocateOnArena() adds 1
 	//every time we allocate a new block
-	int oldArenaIdx = findArena(getHeader((word_t*)oldDataPtr));
-	int newArenaIdx = findArena(getHeader((word_t*)newDataPtr));
+	/*
 	if (oldArenaIdx == newArenaIdx) {
-		arenasList[newArenaIdx].usedBlocks -= 1;
+		if (oldDataPtr == newDataPtr) {
+			arenasList[newArenaIdx].usedBlocks -= 1;
+		}
 	} else {
 		arenasList[oldArenaIdx].usedBlocks -= 1;
-	}
+	}*/
 	
 	//Moving data if its different block
 	if (newDataPtr != oldDataPtr) {
@@ -195,8 +279,7 @@ void Allocator::mem_show()
 		std::cout << "\nMemory currently free" << "\n";
 		return;
 	}
-	for (int j = 0; j <= lastArena; j++)
-	{
+	for (int j = 0; j <= lastArena; j++) {
 		Arena arena = arenasList[j];
 		Block* block = arena.heapStart;
 		int i = 1;
@@ -382,21 +465,21 @@ void Allocator::freeArena(size_t idx)
 			arenasList[idx - 1].next = nullptr;
 		}
 	}
-
 	arenasList[lastArena] = {};
 	if (lastArena != 0) {
 		lastArena -= 1;
 	}
 }
 
-word_t* Allocator::allocateOnArena(size_t size)
+word_t* Allocator::allocateOnArena(size_t size, int startArena)
 {
+	currentArena = startArena;
 	//Iterate over all arenas
-	for (currentArena = 0; currentArena <= lastArena; currentArena++) {
+	for (currentArena; currentArena <= lastArena; currentArena++) {
 		//If we dont find block that can fit data of requested size
 		//We are trying to create new block of given size on current arena
 		if (Block* block = findBlock(size)) {
-			arenasList[findArena(block)].usedBlocks += 1;
+			arenasList[currentArena].usedBlocks += 1;
 			block->used = TRUE;
 			return block->data;
 		}
@@ -436,7 +519,7 @@ word_t* Allocator::allocateOnArena(size_t size)
 		arenasList[currentArena].usedBlocks += 1;
 		return block->data;
 	}
-	currentArena -= 1;
+	//currentArena -= 1;
 	return nullptr;
 }
 

@@ -41,7 +41,7 @@ public:
 	void mem_show();
 private:
 	static const int DEFAULT_ARENA_SIZE = 4096;
-	static const int MAXIMUM_ARENAS = 1000;
+	static const int MAXIMUM_ARENAS = 10000;
 	static const size_t BLOCK_HEADER_SIZE = sizeof(word_t) + sizeof(bool) + sizeof(size_t);
 	inline size_t align(size_t n);
 	HANDLE requestHeapOS();
@@ -61,7 +61,7 @@ private:
 	Block* merge(Block* block);
 	size_t findArena(Block* targetBlock);
 	void freeArena(size_t idx);
-	word_t* allocateOnArena(size_t size);
+	word_t* allocateOnArena(size_t size, int startArena);
 	int currentArena;
 	int lastArena;
 	Arena arenasList[MAXIMUM_ARENAS];

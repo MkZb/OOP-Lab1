@@ -8,7 +8,8 @@ using namespace std;
 TestAllocator::TestAllocator(Allocator* alloc)
 {
 	std::cout << white;
-	srand(time(0));
+	//time(0)
+	srand(0);
 	allocator = alloc;
 	currentDataSize = 0;
 	operationType = 0;
@@ -79,6 +80,8 @@ void TestAllocator::allocate()
 
 	results.push_back(result);
 	//std::cout << white << "ALLOCATED " << currentDataSize << " AT PTR: " << ptr << "\n";
+	//std::cout << white;
+	//allocator->mem_show();
 	successfull += 1;
 }
 
@@ -102,6 +105,8 @@ void TestAllocator::freeMem()
 		std::cout << "PTR: " << results.at(resultToFree).ptr << "; -size: " << results.at(resultToFree).size << "\n";
 	}
 	allocator->mem_free(results.at(resultToFree).ptr);
+	//std::cout << white;
+	//allocator->mem_show();
 	results.erase(results.begin() + resultToFree);
 }
 
@@ -124,5 +129,7 @@ void TestAllocator::reallocate()
 		std::cout << "PTR: " << results.at(resultToRealloc).ptr << "; -size: " << results.at(resultToRealloc).size << "\n";
 	}
 	void* newPtr = allocator->mem_realloc(results.at(resultToRealloc).ptr, results.at(resultToRealloc).size);
+	//std::cout << white;
+	//allocator->mem_show();
 	results.at(resultToRealloc).ptr = newPtr;
 }
