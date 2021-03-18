@@ -67,8 +67,8 @@ void test_mem() {
 int main() {
 	
 	//test_mem();
-	Allocator allocator = Allocator::Allocator(2048);
+	Allocator allocator = Allocator::Allocator(0);
 	TestAllocator tester = TestAllocator::TestAllocator(&allocator);
-	tester.test(1024, 100000);
+	tester.test(4096, 1000000);
 	return 0;
 }

@@ -8,8 +8,7 @@ using namespace std;
 TestAllocator::TestAllocator(Allocator* alloc)
 {
 	std::cout << white;
-	//time(0)
-	srand(0);
+	srand(time(0));
 	allocator = alloc;
 	currentDataSize = 0;
 	operationType = 0;
