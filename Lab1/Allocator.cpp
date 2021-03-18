@@ -64,7 +64,7 @@ void* Allocator::mem_alloc(size_t size)
 		arenasList[0].usedBlocks = 0;
 	}
 	size = align(size);
-	if (size <= DEFAULT_ARENA_SIZE) {
+	if (size + align(BLOCK_HEADER_SIZE) <= DEFAULT_ARENA_SIZE) {
 		currentArena = 0;
 		word_t* ptr = allocateOnArena(size);
 		if (ptr == nullptr) {

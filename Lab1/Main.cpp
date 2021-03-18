@@ -69,6 +69,6 @@ int main() {
 	//test_mem();
 	Allocator allocator = Allocator::Allocator(0);
 	TestAllocator tester = TestAllocator::TestAllocator(&allocator);
-	tester.test(3000, 100000);
+	tester.test(4096, 1000000);
 	return 0;
 }
