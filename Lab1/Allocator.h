@@ -1,5 +1,6 @@
 #pragma once
 #include <list>
+#include <Windows.h>
 using word_t = intptr_t;
 
 struct Block {
@@ -23,6 +24,12 @@ enum class MemoryType {
 	Paged
 };
 
+enum class SearchMode {
+	FirstFit,
+	BestFit,
+};
+
+
 class Allocator
 {
 public:
@@ -36,8 +43,12 @@ private:
 	static const int DEFAULT_ARENA_SIZE = 4096;
 	static const int MAXIMUM_ARENAS = 1000;
 	static const size_t BLOCK_HEADER_SIZE = sizeof(word_t) + sizeof(bool) + sizeof(size_t);
+	inline size_t align(size_t n);
+	HANDLE requestHeapOS();
+	HANDLE workingHeap;
 	word_t pageSize;
 	MemoryType memoryType;
+	SearchMode searchMode;
 	word_t createArena(size_t size);
 	Block* firstFit(size_t size);
 	Block* bestFit(size_t size);
@@ -45,6 +56,7 @@ private:
 	Block* listAllocate(Block* block, size_t size);
 	Block* getHeader(word_t* data);
 	bool canSplit(Block* block, size_t size);
+	bool canMerge(Block* block);
 	Block* split(Block* block, size_t size);
 	Block* merge(Block* block);
 	size_t findArena(Block* targetBlock);

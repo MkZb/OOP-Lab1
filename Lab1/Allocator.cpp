@@ -5,43 +5,18 @@
 #include <fstream>
 #include <stdio.h>
 
-enum class SearchMode {
-	FirstFit,
-	BestFit,
-};
-
-static auto searchMode = SearchMode::BestFit;
-
-//Aligning size
-inline size_t align(size_t n) {
-	return (n + sizeof(word_t) - 1) & ~(sizeof(word_t) - 1);
-}
-
-//Requesting growable heap from OS
-inline HANDLE requestHeapOS() {
-	HANDLE growableHeap = HeapCreate(NULL, 0, 0);
-	return growableHeap;
-}
-
-
-//Check wether block can be merged with next one
-bool canMerge(Block* block) {
-	return block->next && !block->next->used;
-}
-
-//Heap that our process currently using
-HANDLE workingHeap = requestHeapOS();
-
-
 Allocator::Allocator(word_t pgSz)
 {
 	std::cout << "Welcome to my allocator!\n";
+	//Heap that our process currently using
+	workingHeap = requestHeapOS();
 
 	//Initializing values;
 	arenasList[0] = {};
 	currentArena = 0;
 	lastArena = currentArena;
 	pageSize = pgSz;
+	searchMode = SearchMode::BestFit;
 	switch (pageSize)
 	{
 	case(0):
@@ -237,6 +212,19 @@ void Allocator::mem_show()
 }
 
 
+//Aligning size
+inline size_t Allocator::align(size_t n)
+{
+	return (n + sizeof(word_t) - 1) & ~(sizeof(word_t) - 1);
+}
+
+//Requesting growable heap from OS
+inline HANDLE Allocator::requestHeapOS()
+{
+	HANDLE growableHeap = HeapCreate(NULL, 0, 0);
+	return growableHeap;
+}
+
 //Allocate memory from heap (grow it) to get new arena
 word_t Allocator::createArena(size_t size)
 {
@@ -267,6 +255,7 @@ Block* Allocator::bestFit(size_t size)
 		return nullptr;
 	}
 	size_t bestFitSize = bestFitBlock->size;
+	block = bestFitBlock;
 
 	while (block != nullptr) {
 		if (block->used || block->size < size) {
@@ -315,11 +304,19 @@ Block* Allocator::listAllocate(Block* block, size_t size)
 	return block;
 }
 
+//Check wether block can be split
 bool Allocator::canSplit(Block* block, size_t size)
 {
 	return block->size - size >= align(BLOCK_HEADER_SIZE + sizeof(word_t));
 }
 
+//Check wether block can be merged with next one
+bool Allocator::canMerge(Block* block)
+{
+	return block->next && !block->next->used;
+}
+
+//Split block into two
 Block* Allocator::split(Block* block, size_t size)
 {
 	size_t oldSize = block->size;
@@ -338,6 +335,7 @@ Block* Allocator::split(Block* block, size_t size)
 	return block;
 }
 
+//Merge two blocks into one
 Block* Allocator::merge(Block* block)
 {
 	if (arenasList[currentArena].top == block->next) {
@@ -348,7 +346,7 @@ Block* Allocator::merge(Block* block)
 	return block;
 }
 
-
+//Find arena targetBlock belongs to
 size_t Allocator::findArena(Block* targetBlock)
 {
 	for (size_t i = 0; i <= (size_t)lastArena; i++) {
@@ -365,6 +363,7 @@ size_t Allocator::findArena(Block* targetBlock)
 	return NULL; //Should be impossible
 }
 
+//Free arena
 void Allocator::freeArena(size_t idx)
 {
 	HeapFree(workingHeap, NULL, arenasList[idx].heapStart);
